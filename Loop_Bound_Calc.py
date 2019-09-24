@@ -1,23 +1,36 @@
 # -*- coding: utf-8 -*-
 """
 Created on Tue Aug 27 14:18:53 2019
+This is the straight-forward implementation of algorithms in Chaptr 2, 
+"Iteration Bound" of "VLSI Digital Signal Processing Systems".
 
-@author: x1carbon
+The class 'Graph' contains 2 algorithm for calculating iteration bound of dsp 
+graph, named "Longest Path Matrix(LPM)" and "Minimum Cycle Mean(MCM)"
+
+LPM algorithm is O(d^4+de) complexity in which d is the number of delay unit and 
+e is the number of computing unit 
+
+MCM algorithm is O(de+de') complexity in which e' is the number of side of the
+dsp graph 
+
+@author: Singlemaltmaltose
 """
 import numpy as np
 
-class graph(object):
+class Graph(object):
     def __init__(self,node_calc_time, graph_matrix, graph_delay_matrix):
         self.node_calc_time = node_calc_time
         
         # graph_matrix是以计算单元为节点的图对应的矩阵M, M(i,j)为从第i个计算单元为尾
         # 指向第j个计算单元的箭头的延迟数，若不存在i到j的箭头，则M(i,j)=-1
+        # notes:在后面的章节中对于i到j不存在的箭头将改为M(i,j)=None
         self.graph_matrix = graph_matrix
         
         # graph_delay_matrix是以延迟单元为节点的图对应的矩阵graph_delay_matrix, 
         # graph_delay_matrix(i,j)为从第i个延迟单元为尾，指向第j个延迟单元的箭头，
         # 且中间不包含其他延迟单元的路径中，最大的总计算时长，
         # 若不存在i到j且中间无其他延迟单元的箭头，则graph_delay_matrix(i,j)=-1
+        # notes:在后面的章节中对于i到j不存在的箭头将改为graph_delay_matrix(i,j)=None
         self.graph_delay_matrix = graph_delay_matrix
     
     def print_graph(self):
