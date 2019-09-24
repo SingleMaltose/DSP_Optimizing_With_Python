@@ -2,8 +2,12 @@
 """
 Created on Mon Sep 16 16:07:29 2019
 
-This is the straight-forward implementation of finding shortest path in graph
-based on Bellman_Ford algorithm and Floyd_Warshall algorithm
+This is the straight-forward implementation of algorithms in Chaptr 4, "Retiming"
+of "VLSI Digital Signal Processing Systems".
+
+Retiming aims to rearrange latches to shorten critical path or reduce latch numbers.
+This module achieved critical path optimization with target cycle, which is based on 
+Bellman_Ford algorithm and Floyd_Warshall algorithm
 
 The B-F algorithm is O(n^3) complexity for one-to-all node pair's shortest path
 computation, and for all-to-all node pair it requires O(n^4) complexity
@@ -33,6 +37,7 @@ class Graph(object):
         print(self.graph_matrix)
     
     def if_looped_graph(self):
+        # 判定graph_matrix是否包含环路
         g_mat = self.graph_matrix
         w = g_mat.shape[1]
         g_mat_reference = np.zeros([w,w])
@@ -110,8 +115,8 @@ class Graph(object):
         for k in range(w):
             for U in range(w):
                 if R[k][U,U] < 0:
-                    print("包含负回路")
-                    return
+                    print("包含负回路,该优化目标不可实现")
+                    return [np.zeros([w,w])]
         print("不包含负回路")
         return R
     
@@ -131,14 +136,19 @@ class Graph(object):
         R = self.SPF_with_Floyd_Warshall(graph_matrix = g_mat_new)
         
         S_UV = R[-1]
+        print(S_UV)
         W_UV = np.zeros([g_mat.shape[0],g_mat.shape[1]])
-        D_UV = np.diag(node)
+        D_UV = np.diag(node)+np.zeros([node.shape[0],node.shape[0]])
         for i in range(g_mat.shape[0]):
             for j in range(g_mat.shape[1]):
                 if i!=j:
-                    W_UV[i,j] = math.ceil(S_UV[i,j]/M)
-                    D_UV[i,j] = M*W_UV[i,j] - S_UV[i,j] + node[j]
-            
+                    if S_UV[i,j] != float('inf'):
+                        W_UV[i,j] = math.ceil(S_UV[i,j]/M)
+                        D_UV[i,j] = M*W_UV[i,j] - S_UV[i,j] + node[j]
+                    else:
+                        W_UV[i,j] = float('inf')
+                        D_UV[i,j] = float('inf')
+
         inequation_matrix = float('inf')*np.ones([g_mat.shape[0]+1,g_mat.shape[1]+1])
         for i in range(g_mat.shape[0]):
             for j in range(g_mat.shape[1]):
