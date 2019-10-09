@@ -15,10 +15,20 @@ computation, and for all-to-all node pair it requires O(n^4) complexity
 The F-W algorithm is O(n^3) complexity for all-to-all node pair's shortest path
 computation, while consume n times of storage.  
 
+Amendment1: 2019/10/09
+
+1.Create a new function "calculation of S_W_D" to eperate calculation of S,W,D from 
+"retiming_with_minimized_cycle" function.
+
+2.Create a new function "calc_critic_path" and "build_critic_path"to calculate 
+critic_path and its calculating time(latency or cycle).
+
 @author: Singlemaltmaltose
 """
 import numpy as np
 import math
+import copy
+
 class Graph(object):
     
     def __init__(self, graph_matrix, node_calc_time):
@@ -120,50 +130,109 @@ class Graph(object):
         print("不包含负回路")
         return R
     
-    def retiming_with_minimized_cycle(self,target_cycle):
+    def calculation_of_S_W_D(self):
+        # 构建DSP-graph的S矩阵，W矩阵，D矩阵
+        # S矩阵为原始graph转换而成的新graph，G'的任意两个节点的最短路径矩阵
+        # W矩阵为任意两个节点任意路径上寄存器最少的数目
+        # D矩阵为任意两个节点以对应W为权重的，所有路径中最长的计算时间
         g_mat = np.copy(self.graph_matrix)
         node = np.copy(self.node_calc_time)
         
         t_max = np.max(node)
         node_number = node.shape[0]
         M = t_max*node_number
+        # 构建G'
         g_mat_new = np.copy(self.graph_matrix)
         for i in range(g_mat.shape[0]):
             for j in range(g_mat.shape[1]):
                 if g_mat_new[i,j] != None:
                     g_mat_new[i,j] = M*g_mat_new[i,j] - node[i]
         
+        # 使用最短路径问题求解方法求解G'的最短路径矩阵
         R = self.SPF_with_Floyd_Warshall(graph_matrix = g_mat_new)
         
-        S_UV = R[-1]
-        print(S_UV)
-        W_UV = np.zeros([g_mat.shape[0],g_mat.shape[1]])
-        D_UV = np.diag(node)+np.zeros([node.shape[0],node.shape[0]])
+        self.S_UV = R[-1]
+        print(self.S_UV)
+        # 构建W，D
+        self.W_UV = np.zeros([g_mat.shape[0],g_mat.shape[1]])
+        self.D_UV = np.diag(node)+np.zeros([node.shape[0],node.shape[0]])
         for i in range(g_mat.shape[0]):
             for j in range(g_mat.shape[1]):
                 if i!=j:
-                    if S_UV[i,j] != float('inf'):
-                        W_UV[i,j] = math.ceil(S_UV[i,j]/M)
-                        D_UV[i,j] = M*W_UV[i,j] - S_UV[i,j] + node[j]
+                    if self.S_UV[i,j] != float('inf'):
+                        self.W_UV[i,j] = math.ceil(self.S_UV[i,j]/M)
+                        self.D_UV[i,j] = M*self.W_UV[i,j] - self.S_UV[i,j] + node[j]
                     else:
-                        W_UV[i,j] = float('inf')
-                        D_UV[i,j] = float('inf')
+                        self.W_UV[i,j] = float('inf')
+                        self.D_UV[i,j] = float('inf')
 
+    
+    def retiming_with_minimized_cycle(self,target_cycle):
+        # 对原DSP-graph进行重定时，通过重新安排寄存器的位置，在不影响电路功能的情况下，
+        # 实现最小化关键路径，从而降低时钟周期
+        g_mat = np.copy(self.graph_matrix)
         inequation_matrix = float('inf')*np.ones([g_mat.shape[0]+1,g_mat.shape[1]+1])
         for i in range(g_mat.shape[0]):
             for j in range(g_mat.shape[1]):
                 if g_mat[i,j]!=None:
                     inequation_matrix[j,i] = g_mat[i,j]
         
-        for i in range(D_UV.shape[0]):
-            for j in range(D_UV.shape[1]):
-                if D_UV[i,j] > target_cycle:
-                    if W_UV[i,j]-1 <= inequation_matrix[j,i]:
-                        inequation_matrix[j,i] = W_UV[i,j] - 1
+        # 重定时的电路满足以下约束：
+        # 可行性约束：重定时后的任意边延时不为负数，即r(U)-r(V)<=w(e)
+        # 关键路径约束：对于计算时间超过目标周期的路径，使其重定时后的路径延迟大于1，
+        # 即r(U)-r(V)<=W(U,V)-1
+        for i in range(self.D_UV.shape[0]):
+            for j in range(self.D_UV.shape[1]):
+                if self.D_UV[i,j] > target_cycle:
+                    if self.W_UV[i,j]-1 <= inequation_matrix[j,i]:
+                        inequation_matrix[j,i] = self.W_UV[i,j] - 1
         
-        inequation_matrix[-1,:] = 0       
+        inequation_matrix[-1,:] = 0
+        # 根据约束条件得出的不等式，构建图，并使用最短路径法进行求解
         Retiming_result = self.SPF_with_Floyd_Warshall(graph_matrix = inequation_matrix)
+        
+
+        
         return Retiming_result[-1][-1,:-1]
+        
+    def calc_critic_path(self):
+        # 求解DSP-graph的关键路径长度，并标出关键路径经由的具体单元。
+        # 求解方法：1.根据W矩阵确定所有路径延迟为0的路径，并记录其头尾节点
+        # 2.基于D矩阵，计算路径延迟为0的路径的计算时间，并取其中的最大值，即为关键路径延迟
+        # 3.对于路径延迟等于关键路径延迟的路径，确定为关键路径，并记录这些关键路径的头尾节点
+        # 4.根据关键路径的头尾节点对，遍历其对应的所有0延迟路径，并计算该路径计算时间
+        # 5.对于计算时间等于关键路径延迟的路径，即为关键路径，记录进self并返回
+        
+        zero_path_cord = np.where(self.W_UV == 0)
+        zero_path_cord_pair = list(zip(list(zero_path_cord[0]),list(zero_path_cord[1])))
+        zero_path_calc_time = self.D_UV[zero_path_cord]        
+        path_to_calc_time_dict = dict(zip(zero_path_cord_pair,zero_path_calc_time))
+        self.critic_path_calc_time = max(zero_path_calc_time)
+        #print(path_to_calc_time_dict)
+        self.critic_path_cord = []
+        for key in path_to_calc_time_dict.keys():
+            if path_to_calc_time_dict[key] == self.critic_path_calc_time:
+                self.critic_path_cord.append(key)
+        for cord in self.critic_path_cord:
+            self.build_critic_path(cord)
+        return self.critic_path_calc_time, self.critic_path_cord, self.critic_path_list
+    
+        
+    def build_critic_path(self,cord_pair):
+        # 对应求解关键路径的第4、5步，使用递归的方法遍历路径延时为0，计算时间为关键路
+        # 径延迟的路径首尾对，并记录对应的路径具体节点到self.critic_path_list中
+        self.zero_path.append(cord_pair[0])
+        if cord_pair[0] == cord_pair[1]:
+            if sum([self.node_calc_time[x] for x in self.zero_path]) == self.critic_path_calc_time:
+                critic_path = copy.deepcopy(self.zero_path)
+                self.critic_path_list.append(critic_path)
+            #print(self.critic_path_list)
+            #print(self.zero_path)
+        for index,i in enumerate(self.graph_matrix[cord_pair[0],:]):
+            if i == 0:
+                self.build_critic_path(cord_pair=[index,cord_pair[1]])
+            if index == self.graph_matrix.shape[0]-1:
+                self.zero_path.pop()
         
         
         
